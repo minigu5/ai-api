@@ -113,3 +113,22 @@ def test_bin_wrapper(tmp_path):
     link.symlink_to(ROOT / "bin" / "local-agent")
     r = subprocess.run([str(link), "--help"], capture_output=True, text=True)
     assert r.returncode == 0 and "--continue" in r.stdout
+
+
+def test_dir_subfolder_is_worker_cwd(setup):
+    bin_dir, repo = setup
+    sub = repo / "pkg"
+    sub.mkdir()
+    fake(bin_dir, "pi", "")
+    assert cli.main(["--dir", str(sub), "x"]) == 0
+    assert os.path.realpath(call(bin_dir, "pi")["cwd"]) == os.path.realpath(sub)
+
+
+def test_report_sections_are_capped(setup, capsys):
+    bin_dir, repo = setup
+    fake(bin_dir, "pi", "import os\nos.makedirs('gen')\n[open(f'gen/f{i}.txt', 'w').write('x') for i in range(100)]\n")
+    assert cli.main(["--dir", str(repo), "x"]) == 0
+    out = capsys.readouterr().out
+    new_section = out.split("new files:\n")[1].split("\nlog:")[0].splitlines()
+    assert len(new_section) <= 31
+    assert "70 more" in new_section[-1]

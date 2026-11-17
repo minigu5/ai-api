@@ -16,7 +16,7 @@ from .preflight import PreflightError, read_token
 
 @dataclass
 class RunResult:
-    status: Literal["ok", "failed", "timeout"]
+    status: Literal["ok", "failed", "timeout", "interrupted"]
     exit_code: int | None
     summary: str
     session: str
@@ -68,9 +68,24 @@ def _claude_command(prompt: str, cfg: Config, session: str | None) -> tuple[list
     return argv, env
 
 
-def _known_pi_session(cfg: Config, session: str) -> bool:
-    sessions = cfg.state_dir / "sessions"
-    return sessions.is_dir() and any(session in p.name for p in sessions.rglob("*") if p.is_file())
+def _known_pi_session(cfg: Config, session: str, cwd: Path) -> bool:
+    """pi resumes only a session whose header has this exact id and cwd; anything else starts a new one."""
+    for path in (cfg.state_dir / "sessions").glob("*.jsonl"):
+        try:
+            with open(path) as f:
+                header = json.loads(f.readline())
+        except (OSError, ValueError):
+            continue
+        if header.get("id") == session and os.path.realpath(header.get("cwd", "")) == os.path.realpath(cwd):
+            return True
+    return False
+
+
+def _kill_group(pid: int) -> None:
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
 
 
 def run(harness: Literal["pi", "claude"], prompt: str, cwd: Path, cfg: Config, session: str | None,
@@ -78,7 +93,7 @@ def run(harness: Literal["pi", "claude"], prompt: str, cwd: Path, cfg: Config, s
     if which(harness) is None:
         raise PreflightError(f"{harness} is not installed or not on PATH")
     if harness == "pi":
-        if session and not _known_pi_session(cfg, session):
+        if session and not _known_pi_session(cfg, session, cwd):
             raise UnknownSession(f"no pi session {session} under {cfg.state_dir / 'sessions'}")
         session = session or str(uuid.uuid4())
         argv, extra = _pi_command(prompt, cfg, session)
@@ -93,12 +108,24 @@ def run(harness: Literal["pi", "claude"], prompt: str, cwd: Path, cfg: Config, s
         # Own process group, so a timeout also stops the shell commands the worker started.
         proc = subprocess.Popen(argv, cwd=cwd, stdin=subprocess.DEVNULL, stdout=out, stderr=err,
                                 env=env, start_new_session=True)
+        interrupted = False
+
+        def stop(*_):
+            nonlocal interrupted
+            interrupted = True
+            _kill_group(proc.pid)
+
+        # If our caller kills us (e.g. a shell tool's time limit), take the worker down too and still report.
+        previous = {sig: signal.signal(sig, stop) for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)}
         try:
             code = proc.wait(timeout=cfg.timeout)
         except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGKILL)
+            _kill_group(proc.pid)
             proc.wait()
             code = None
+        finally:
+            for sig, handler in previous.items():
+                signal.signal(sig, handler)
 
     text = log_path.read_text(errors="replace")
     if harness == "pi":
@@ -106,5 +133,10 @@ def run(harness: Literal["pi", "claude"], prompt: str, cwd: Path, cfg: Config, s
     else:
         summary, reported = claude_summary(text)
         session = reported or session or ""
-    status = "timeout" if code is None else ("ok" if code == 0 else "failed")
+    if interrupted:
+        status = "interrupted"
+    elif code is None:
+        status = "timeout"
+    else:
+        status = "ok" if code == 0 else "failed"
     return RunResult(status, code, summary, session, log_path)

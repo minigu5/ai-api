@@ -1,6 +1,7 @@
 """local-agent: hand a coding task to the cluster's local model and print a short report."""
 import argparse
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -10,7 +11,8 @@ from .harness import UnknownSession, run
 from .preflight import PreflightError, check
 from .workspace import NotARepo, changes, snapshot
 
-EXIT_PREFLIGHT, EXIT_FAILED, EXIT_TIMEOUT = 2, 3, 4
+EXIT_PREFLIGHT, EXIT_FAILED, EXIT_TIMEOUT, EXIT_INTERRUPTED = 2, 3, 4, 5
+MAX_LINES = 30
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -26,14 +28,24 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
+def _capped(text: str) -> str:
+    """Keep each report section short so it does not flood the maintainer's context."""
+    lines = text.splitlines()
+    if not lines:
+        return "(none)"
+    if len(lines) <= MAX_LINES:
+        return "\n".join(lines)
+    return "\n".join(lines[:MAX_LINES] + [f"... {len(lines) - MAX_LINES} more lines, see log"])
+
+
 def _report(status: str, session: str, seconds: int, summary: str, stat: str, new: list[str], log: Path) -> str:
     return "\n".join([
         f"status: {status}",
         f"session: {session}",
         f"time: {seconds}s",
-        "summary:", summary or "(none)",
-        "changes:", stat or "(none)",
-        "new files:", "\n".join(new) or "(none)",
+        "summary:", _capped(summary),
+        "changes:", _capped(stat),
+        "new files:", _capped("\n".join(new)),
         f"log: {log}",
     ])
 
@@ -45,14 +57,19 @@ def main(argv: list[str] | None = None) -> int:
         snap = snapshot(Path(args.dir))
         check(cfg)
         started = time.monotonic()
-        result = run(args.harness, args.prompt, snap.root, cfg, args.session)
+        result = run(args.harness, args.prompt, Path(args.dir).resolve(), cfg, args.session)
     except (NotARepo, PreflightError, UnknownSession) as e:
         print(f"local-agent: {e}", file=sys.stderr)
         return EXIT_PREFLIGHT
     seconds = round(time.monotonic() - started)
-    stat, new = changes(snap)
+    try:
+        stat, new = changes(snap)
+    except subprocess.CalledProcessError as e:
+        stat, new = f"(could not compute: {(e.stderr or '').strip() or e})", []
     if result.status == "ok":
         status, code = "ok", 0
+    elif result.status == "interrupted":
+        status, code = "interrupted", EXIT_INTERRUPTED
     elif result.status == "timeout":
         status, code = f"timeout ({cfg.timeout}s)", EXIT_TIMEOUT
     else:

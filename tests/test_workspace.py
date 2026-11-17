@@ -58,3 +58,19 @@ def test_freshly_copied_repo(repo, tmp_path):
     shutil.copytree(repo, copy, copy_function=shutil.copy)
     s = snapshot(copy)
     assert changes(s) == ("", [])
+
+
+def test_edit_to_prior_untracked_file_is_reported(repo):
+    (repo / "draft.py").write_text("v1\n")
+    s = snapshot(repo)
+    (repo / "draft.py").write_text("v2\n")
+    stat, new = changes(s)
+    assert "draft.py" in stat and new == []
+
+
+def test_repo_without_commits(tmp_path):
+    git(tmp_path, "init", "-q")
+    s = snapshot(tmp_path)
+    (tmp_path / "first.py").write_text("x\n")
+    stat, new = changes(s)
+    assert new == ["first.py"] and "first.py" in stat
