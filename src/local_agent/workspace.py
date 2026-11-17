@@ -28,8 +28,10 @@ def snapshot(dir: Path) -> Snapshot:
         root = Path(_git(dir, "rev-parse", "--show-toplevel").strip())
     except (subprocess.CalledProcessError, FileNotFoundError, NotADirectoryError):
         raise NotARepo(f"{dir} is not a git working tree") from None
+    # A stale index (e.g. a copied checkout) makes the first `git stash create` exit 1; refresh it first.
+    subprocess.run(["git", "update-index", "-q", "--refresh"], cwd=root, capture_output=True)
     # `git stash create` records the current edits as a commit without touching the tree.
-    base = _git(root, "stash", "create").strip() or "HEAD"
+    base =_git(root, "stash", "create").strip() or "HEAD"
     return Snapshot(root, base, _untracked(root))
 
 

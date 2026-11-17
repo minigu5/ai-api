@@ -49,3 +49,12 @@ def test_snapshot_does_not_touch_tree(repo):
     before = git(repo, "status", "--porcelain")
     snapshot(repo)
     assert git(repo, "status", "--porcelain") == before
+
+
+def test_freshly_copied_repo(repo, tmp_path):
+    """A copied checkout has a stale index; the first `git stash create` there exits 1."""
+    import shutil
+    copy = tmp_path / "copy"
+    shutil.copytree(repo, copy, copy_function=shutil.copy)
+    s = snapshot(copy)
+    assert changes(s) == ("", [])
