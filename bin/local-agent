@@ -1,0 +1,4 @@
+#!/bin/sh
+# Resolve symlinks (e.g. ~/.local/bin/local-agent) to find the repository.
+here=$(dirname "$(realpath "$0")")
+PYTHONPATH="$here/../src${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m local_agent "$@"
