@@ -200,3 +200,18 @@ def test_terminate_stops_worker_and_reports(tmp_path):
     time.sleep(0.2)
     with pytest.raises(ProcessLookupError):
         os.kill(worker, 0)
+
+
+def test_pi_error_message_exit_zero_is_failed(env):
+    """pi exits 0 even when the model's last message ended in an error (e.g. a malformed tool call)."""
+    cfg, bin_dir, work = env
+    events = [
+        {"type": "message_end", "message": {"role": "assistant", "content": [{"type": "text", "text": "reading the file"}],
+                                            "stopReason": "toolUse"}},
+        {"type": "message_end", "message": {"role": "assistant", "content": [], "stopReason": "error",
+                                            "errorMessage": "<tool_call>\n{\"name\": \"read\"}\n</tool_call>"}},
+    ]
+    fake(bin_dir, "pi", f"for e in {events!r}:\n    print(json.dumps(e))\n")
+    r = run("pi", "x", work, cfg, None)
+    assert r.status == "failed" and r.exit_code == 0
+    assert "<tool_call>" in r.summary

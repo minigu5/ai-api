@@ -42,6 +42,20 @@ def pi_summary(jsonl_text: str) -> str:
     return last.strip()
 
 
+def pi_error(jsonl_text: str) -> str:
+    """The model's error text if its last message ended in an error; pi still exits 0 in that case."""
+    error = ""
+    for line in jsonl_text.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        message = event.get("message") or {}
+        if event.get("type") == "message_end" and message.get("role") == "assistant":
+            error = (message.get("errorMessage") or "error") if message.get("stopReason") == "error" else ""
+    return error.strip()
+
+
 def claude_summary(json_text: str) -> tuple[str, str]:
     try:
         data = json.loads(json_text)
@@ -128,8 +142,12 @@ def run(harness: Literal["pi", "claude"], prompt: str, cwd: Path, cfg: Config, s
                 signal.signal(sig, handler)
 
     text = log_path.read_text(errors="replace")
+    model_error = ""
     if harness == "pi":
         summary = pi_summary(text)
+        model_error = pi_error(text)
+        if model_error:
+            summary = f"model error: {model_error}"
     else:
         summary, reported = claude_summary(text)
         session = reported or session or ""
@@ -138,5 +156,5 @@ def run(harness: Literal["pi", "claude"], prompt: str, cwd: Path, cfg: Config, s
     elif code is None:
         status = "timeout"
     else:
-        status = "ok" if code == 0 else "failed"
+        status = "ok" if code == 0 and not model_error else "failed"
     return RunResult(status, code, summary, session, log_path)

@@ -73,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     elif result.status == "timeout":
         status, code = f"timeout ({cfg.timeout}s)", EXIT_TIMEOUT
     else:
-        status, code = f"failed (exit {result.exit_code})", EXIT_FAILED
+        why = "model error" if result.exit_code == 0 else f"exit {result.exit_code}"
+        status, code = f"failed ({why})", EXIT_FAILED
     print(_report(status, result.session, seconds, result.summary, stat, new, result.log_path))
     return code
