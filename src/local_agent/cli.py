@@ -9,6 +9,7 @@ from pathlib import Path
 from .config import load_config
 from .harness import UnknownSession, run
 from .preflight import PreflightError, check
+from .setup import setup
 from .workspace import NotARepo, changes, snapshot
 
 EXIT_PREFLIGHT, EXIT_FAILED, EXIT_TIMEOUT, EXIT_INTERRUPTED = 2, 3, 4, 5
@@ -51,6 +52,13 @@ def _report(status: str, session: str, seconds: int, summary: str, stat: str, ne
 
 
 def main(argv: list[str] | None = None) -> int:
+    if (argv if argv is not None else sys.argv[1:]) == ["--setup"]:
+        try:
+            setup(load_config(os.environ))
+        except PreflightError as e:
+            print(f"local-agent: {e}", file=sys.stderr)
+            return EXIT_PREFLIGHT
+        return 0
     args = _parser().parse_args(argv)
     cfg = load_config(os.environ, model=args.model, timeout=args.timeout)
     try:

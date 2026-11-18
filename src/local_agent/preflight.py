@@ -24,12 +24,13 @@ def _ssl_context(cfg: Config) -> ssl.SSLContext | None:
     return ssl.create_default_context(cafile=str(cfg.ca_path)) if cfg.ca_path.exists() else None
 
 
-def check(cfg: Config, opener=urllib.request.urlopen) -> None:
+def served_models(cfg: Config, opener=urllib.request.urlopen) -> list[str]:
+    """Model ids the gateway serves right now; raises PreflightError with the fix when it cannot say."""
     token = read_token(cfg)
     req = urllib.request.Request(cfg.gateway + "/v1/models", headers={"Authorization": f"Bearer {token}"})
     try:
         with opener(req, timeout=10, context=_ssl_context(cfg)) as resp:
-            ids = {m.get("id") for m in json.load(resp).get("data", [])}
+            ids = [m.get("id") for m in json.load(resp).get("data", [])]
     except urllib.error.HTTPError as e:
         if e.code in (401, 403):
             raise PreflightError(
@@ -39,7 +40,12 @@ def check(cfg: Config, opener=urllib.request.urlopen) -> None:
     except (urllib.error.URLError, OSError) as e:
         reason = getattr(e, "reason", e)
         raise PreflightError(f"cannot reach gateway {cfg.gateway} ({reason}); on the head Mac run: omm cluster status") from None
-    if cfg.model not in ids:
+    return ids
+
+
+def check(cfg: Config, opener=urllib.request.urlopen, model_ok: bool = True) -> None:
+    ids = served_models(cfg, opener)
+    if model_ok and cfg.model not in ids:
         raise PreflightError(
             f"model {cfg.model} is not loaded; on the head Mac run: omm cluster load {cfg.model} --on node4"
         )

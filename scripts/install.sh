@@ -1,5 +1,5 @@
 #!/bin/sh
-# Link the local-agent command and the Claude Code skill into the user's folders.
+# Link the local-agent command and the Claude Code skill, then set up the token, CA and pi models.
 set -eu
 repo=$(cd "$(dirname "$0")/.." && pwd)
 
@@ -18,3 +18,5 @@ link() {  # link <target> <link path>
 
 link "$repo/bin/local-agent" "$HOME/.local/bin/local-agent"
 link "$repo/skills/local-agent" "$HOME/.claude/skills/local-agent"
+
+"$repo/bin/local-agent" --setup
