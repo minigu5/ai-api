@@ -1,4 +1,9 @@
 #!/bin/sh
 # Resolve symlinks (e.g. ~/.local/bin/local-agent) to find the repository.
 here=$(dirname "$(realpath "$0")")
-PYTHONPATH="$here/../src${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m local_agent "$@"
+# Use the runtime that install.sh put under ~/.local/share when there is one, else whatever is on PATH.
+rt="${LOCAL_AGENT_RUNTIME:-$HOME/.local/share/ai-api-runtime}"
+PATH="$rt/pi/bin:$rt/node/bin:$PATH"
+py=python3
+[ -x "$rt/python/bin/python3" ] && py="$rt/python/bin/python3"
+PYTHONPATH="$here/../src${PYTHONPATH:+:$PYTHONPATH}" exec "$py" -m local_agent "$@"
