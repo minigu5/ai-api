@@ -50,10 +50,11 @@ ensure_runtime
 link() {  # link <target> <link path>
   if [ -L "$2" ] && [ "$(readlink "$2")" = "$1" ]; then
     echo "ok: $2"
-  elif [ -e "$2" ] || [ -L "$2" ]; then
-    echo "stop: $2 already exists and is not a link to $1; move it away and run again" >&2
+  elif [ -e "$2" ] && [ ! -L "$2" ]; then
+    echo "stop: $2 already exists and is not a link; move it away and run again" >&2
     exit 1
   else
+    if [ -L "$2" ]; then echo "relinking: $2 (was -> $(readlink "$2"))"; rm "$2"; fi
     mkdir -p "$(dirname "$2")"
     ln -s "$1" "$2"
     echo "linked: $2 -> $1"
