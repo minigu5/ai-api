@@ -45,3 +45,13 @@ def test_setup_writes_files_and_needs_pi(tmp_path, monkeypatch):
     assert cfg.token_path.read_text() == "tok\n" and oct(cfg.token_path.stat().st_mode)[-3:] == "600"
     assert cfg.ca_path.read_text() == CA
     assert "m1" in (cfg.pi_dir / "models.json").read_text()
+
+
+def test_setup_without_terminal_says_how_to_pass_token(tmp_path):
+    cfg = load_config({"LOCAL_AGENT_HOME": str(tmp_path / "cfg")})
+
+    def no_tty(prompt):
+        raise EOFError
+
+    with pytest.raises(PreflightError, match="LOCAL_AGENT_TOKEN"):
+        su.setup(cfg, env={}, ask=no_tty)

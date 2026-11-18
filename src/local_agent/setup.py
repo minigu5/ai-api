@@ -41,7 +41,10 @@ def models_json(gateway: str, ids: list[str]) -> str:
 def setup(cfg: Config, env=os.environ, ask=getpass.getpass, run=subprocess.run, out=sys.stdout) -> None:
     cfg.home.mkdir(parents=True, exist_ok=True)
     if not cfg.token_path.exists():
-        token = (env.get("LOCAL_AGENT_TOKEN") or ask("Gateway token (ask the cluster owner): ")).strip()
+        try:
+            token = (env.get("LOCAL_AGENT_TOKEN") or ask("Gateway token (ask the cluster owner): ")).strip()
+        except (EOFError, OSError):
+            raise PreflightError("cannot ask for the token without a terminal; run again with LOCAL_AGENT_TOKEN=<token>") from None
         if not token:
             raise PreflightError("no token given")
         cfg.token_path.write_text(token + "\n")
